@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Mapa 3D con Cesium + Google Photorealistic Tiles</title>
+  <link
+    href="https://cesium.com/downloads/cesiumjs/releases/1.118/Build/Cesium/Widgets/widgets.css"
+    rel="stylesheet"
+  />
+  <style>
+    html, body, #cesiumContainer {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    .info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255,255,255,0.95);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-family: sans-serif;
+      z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255,255,255,0.95);
+      padding: 16px;
+      border-radius: 8px;
+      font-family: sans-serif;
+      z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      min-width: 280px;
+    }
+    .controls h3 {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+      color: #333;
+    }
+    .control-group {
+      margin-bottom: 12px;
+    }
+    .control-group label {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .control-group input {
+      width: calc(100% - 8px);
+      padding: 6px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .control-group button {
+      width: 100%;
+      padding: 8px;
+      background: #0ea5e9;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .control-group button:hover {
+      background: #0284c7;
+    }
+    .coords-display {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 12px;
+      z-index: 10;
+    }
+    .preset-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .preset-btn {
+      padding: 6px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      text-align: center;
+    }
+    .preset-btn:hover {
+      background: #e2e8f0;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="cesiumContainer"></div>
+  
+  <div class="info">
+    🌍 <strong>Mapa 3D Interactivo</strong><br>
+    <small>Arequipa, Perú - Google Photorealistic</small>
+  </div>
+
+  <div class="controls">
+    <h3>🔍 Buscar Ubicación</h3>
+    
+    <div class="control-group">
+      <label>Latitud:</label>
+      <input type="number" id="latitude" step="0.0001" placeholder="-16.409">
+    </div>
+    
+    <div class="control-group">
+      <label>Longitud:</label>
+      <input type="number" id="longitude" step="0.0001" placeholder="-71.5375">
+    </div>
+    
+    <div class="control-group">
+      <label>Altura (metros):</label>
+      <input type="number" id="height" value="2500" min="100" max="50000">
+    </div>
+    
+    <div class="control-group">
+      <button onclick="flyToLocation()">✈️ Ir a Ubicación</button>
+    </div>
+
+    <h3>📍 Lugares Predefinidos</h3>
+    <div class="preset-buttons">
+      <div class="preset-btn" onclick="flyToPreset('arequipa')">🏔️ Plaza Arequipa</div>
+      <div class="preset-btn" onclick="flyToPreset('misti')">🌋 Volcán Misti</div>
+      <div class="preset-btn" onclick="flyToPreset('colca')">🦅 Cañón Colca</div>
+      <div class="preset-btn" onclick="flyToPreset('machu')">🏛️ Machu Picchu</div>
+      <div class="preset-btn" onclick="flyToPreset('lima')">🏙️ Lima</div>
+      <div class="preset-btn" onclick="flyToPreset('cusco')">⛰️ Cusco</div>
+    </div>
+  </div>
+
+  <div class="coords-display" id="coordsDisplay">
+    Lat: 0.0000 | Lon: 0.0000 | Alt: 0m
+  </div>
+
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.118/Build/Cesium/Cesium.js"></script>
+
+  <script>
+    window.CESIUM_BASE_URL = "https://cesium.com/downloads/cesiumjs/releases/1.118/Build/Cesium/";
+    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlNjE1OTljYS0wYzA3LTQzMmYtYjhkMy0wNTY2NDQxNTE0ZTIiLCJpZCI6MzQ3MjI1LCJpYXQiOjE3NTk2MDA3ODd9.hpIUl8qO3CTEMKD-elxyWQCIBRYriarlnQoAjpxFHlY";
+
+    let viewer;
+
+    // Lugares predefinidos
+    const presets = {
+      arequipa: { lat: -16.409, lon: -71.5375, height: 2500, name: "Plaza de Armas, Arequipa" },
+      misti: { lat: -16.294, lon: -71.409, height: 8000, name: "Volcán Misti" },
+      colca: { lat: -15.610, lon: -71.888, height: 5000, name: "Cañón del Colca" },
+      machu: { lat: -13.163, lon: -72.545, height: 3000, name: "Machu Picchu" },
+      lima: { lat: -12.046, lon: -77.043, height: 2000, name: "Lima Centro" },
+      cusco: { lat: -13.532, lon: -71.968, height: 3000, name: "Cusco" }
+    };
+
+    async function initCesium() {
+      viewer = new Cesium.Viewer("cesiumContainer", {
+        baseLayerPicker: false,
+        geocoder: false,
+        timeline: false,
+        animation: false,
+        shouldAnimate: true,
+        terrainProvider: await Cesium.createWorldTerrainAsync(),
+      });
+
+      // Cargar Google 3D Tiles
+      try {
+        const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(2275207);
+        viewer.scene.primitives.add(tileset);
+        console.log("✅ Google 3D Tiles cargado");
+      } catch (error) {
+        console.error("❌ Error:", error);
+      }
+
+      // Cámara inicial
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(-71.5375, -16.409, 2500),
+        orientation: {
+          heading: Cesium.Math.toRadians(0),
+          pitch: Cesium.Math.toRadians(-35),
+          roll: 0,
+        },
+      });
+
+      // Mejorar visualización
+      viewer.scene.globe.enableLighting = true;
+      viewer.scene.skyAtmosphere.show = true;
+
+      // Actualizar coordenadas en tiempo real
+      const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+      handler.setInputAction(function(movement) {
+        const cartesian = viewer.camera.pickEllipsoid(movement.endPosition, viewer.scene.globe.ellipsoid);
+        if (cartesian) {
+          const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+          const lat = Cesium.Math.toDegrees(cartographic.latitude).toFixed(4);
+          const lon = Cesium.Math.toDegrees(cartographic.longitude).toFixed(4);
+          const alt = Math.round(viewer.camera.positionCartographic.height);
+          
+          document.getElementById('coordsDisplay').innerHTML = 
+            `Lat: ${lat} | Lon: ${lon} | Alt: ${alt}m`;
+        }
+      }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+      // Click para añadir marcador
+      handler.setInputAction(function(click) {
+        const cartesian = viewer.camera.pickEllipsoid(click.position, viewer.scene.globe.ellipsoid);
+        if (cartesian) {
+          const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+          const lat = Cesium.Math.toDegrees(cartographic.latitude);
+          const lon = Cesium.Math.toDegrees(cartographic.longitude);
+          
+          // Añadir pin
+          viewer.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(lon, lat),
+            point: {
+              pixelSize: 10,
+              color: Cesium.Color.RED,
+              outlineColor: Cesium.Color.WHITE,
+              outlineWidth: 2
+            },
+            label: {
+              text: `${lat.toFixed(4)}, ${lon.toFixed(4)}`,
+              font: '14px sans-serif',
+              fillColor: Cesium.Color.WHITE,
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 2,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              pixelOffset: new Cesium.Cartesian2(0, -12)
+            }
+          });
+        }
+      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    }
+
+    // Función para volar a ubicación personalizada
+    function flyToLocation() {
+      const lat = parseFloat(document.getElementById('latitude').value);
+      const lon = parseFloat(document.getElementById('longitude').value);
+      const height = parseFloat(document.getElementById('height').value);
+
+      if (isNaN(lat) || isNaN(lon) || isNaN(height)) {
+        alert('⚠️ Por favor ingresa coordenadas válidas');
+        return;
+      }
+
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+        orientation: {
+          heading: Cesium.Math.toRadians(0),
+          pitch: Cesium.Math.toRadians(-35),
+          roll: 0
+        },
+        duration: 3
+      });
+
+      // Añadir marcador
+      viewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lon, lat),
+        point: {
+          pixelSize: 12,
+          color: Cesium.Color.BLUE,
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 3
+        }
+      });
+    }
+
+    // Función para lugares predefinidos
+    function flyToPreset(key) {
+      const preset = presets[key];
+      
+      document.getElementById('latitude').value = preset.lat;
+      document.getElementById('longitude').value = preset.lon;
+      document.getElementById('height').value = preset.height;
+
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(preset.lon, preset.lat, preset.height),
+        orientation: {
+          heading: Cesium.Math.toRadians(0),
+          pitch: Cesium.Math.toRadians(-35),
+          roll: 0
+        },
+        duration: 3
+      });
+
+      console.log(`✈️ Volando a: ${preset.name}`);
+    }
+
+    // Teclas de atajo
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        flyToLocation();
+      }
+      if (e.key === 'Escape') {
+        viewer.entities.removeAll(); // Limpiar marcadores
+      }
+    });
+
+    initCesium();
+  </script>
+</body>
+</html>
